@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nano World Models</title>
+    <meta name="description" content="Nano World Models — a minimalist, batteries-included repository for advancing world model science.">
+    <meta name="theme-color" content="#eeece2">
+    <!-- favicon -->
+    <link rel="icon" type="image/png" sizes="32x32" href="assets/favicons/icon1-32.png?v=1">
+    <link rel="icon" type="image/png" sizes="180x180" href="assets/favicons/icon1-180.png?v=1">
+    <link rel="apple-touch-icon" href="assets/favicons/icon1-180.png?v=1">
+    <link rel="stylesheet" href="styles.css?v=36">
+</head>
+<body>
+
+    <!-- Page Dots Navigation -->
+    <nav id="page-dots" aria-label="Page navigation">
+        <button class="page-dot active" data-page="0" aria-label="Hero"></button>
+        <button class="page-dot" data-page="1" aria-label="Motivation (1/3)"></button>
+        <button class="page-dot" data-page="2" aria-label="Motivation (2/3)"></button>
+        <button class="page-dot" data-page="3" aria-label="Motivation (3/3)"></button>
+        <button class="page-dot" data-page="4" aria-label="Quick-start"></button>
+        <button class="page-dot" data-page="5" aria-label="Architecture"></button>
+        <button class="page-dot" data-page="6" aria-label="Features"></button>
+        <button class="page-dot" data-page="7" aria-label="Applications"></button>
+        <button class="page-dot" data-page="8" aria-label="Open Source"></button>
+    </nav>
+
+    <!-- Page 1: Hero -->
+    <header id="page-hero" class="page-section active">
+        <h1 class="main-title" id="hero-title"></h1>
+        <p class="subtitle" id="hero-subtitle"></p>
+        <div class="nav-buttons">
+            <a data-link="github" target="_blank" rel="noopener noreferrer" class="nav-btn">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                </svg>
+                <span>GitHub</span>
+            </a>
+            <a data-link="models" target="_blank" rel="noopener noreferrer" class="nav-btn">
+                <img src="assets/huggingface-logo.svg" alt="" width="20" height="20" style="display:block;" aria-hidden="true">
+                <span>Models</span>
+            </a>
+            <a data-link="twitter" target="_blank" rel="noopener noreferrer" class="nav-btn">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path d="M23.953 4.57a9.9 9.9 0 0 1-2.825.775 4.93 4.93 0 0 0 2.163-2.723 9.9 9.9 0 0 1-3.127 1.196 4.92 4.92 0 0 0-8.384 4.482A13.96 13.96 0 0 1 1.64 3.162a4.92 4.92 0 0 0 1.523 6.573 4.9 4.9 0 0 1-2.23-.616v.062a4.92 4.92 0 0 0 3.946 4.827 4.93 4.93 0 0 1-2.224.084 4.92 4.92 0 0 0 4.59 3.417A9.87 9.87 0 0 1 0 19.54a13.93 13.93 0 0 0 7.548 2.212c9.057 0 14.01-7.504 14.01-14.01 0-.213-.005-.426-.014-.637A10 10 0 0 0 24 4.59z"/>
+                </svg>
+                <span>Twitter</span>
+            </a>
+        </div>
+        <div id="hero-canvas-container">
+            <canvas id="hero-canvas" aria-hidden="true"></canvas>
+        </div>
+        <div class="scroll-hint" aria-hidden="true">scroll to explore<br><span>↓</span></div>
+    </header>
+
+    <!-- Page 2-4: Motivation (3 pages) -->
+    <section id="page-motivation-1" class="page-section">
+        <div class="fullpage-layout fullpage-layout--tight">
+            <div class="fullpage-text">
+                <h2 class="page-label" id="motivation-label-1"></h2>
+                <h1 class="page-title" id="motivation-title-1"></h1>
+                <blockquote class="page-quote" id="motivation-quote-1"></blockquote>
+                <div id="motivation-body-1"></div>
+            </div>
+            <div class="fullpage-visual" id="motivation-canvas-container-1">
+                <canvas id="motivation-canvas-1" aria-hidden="true"></canvas>
+            </div>
+        </div>
+    </section>
+
+    <section id="page-motivation-2" class="page-section">
+        <div class="fullpage-layout fullpage-layout--tight">
+            <div class="fullpage-text">
+                <h2 class="page-label" id="motivation-label-2"></h2>
+                <h1 class="page-title" id="motivation-title-2"></h1>
+                <blockquote class="page-quote" id="motivation-quote-2"></blockquote>
+                <div id="motivation-body-2"></div>
+            </div>
+            <div class="fullpage-visual" id="motivation-canvas-container-2">
+                <canvas id="motivation-canvas-2" aria-hidden="true"></canvas>
+            </div>
+        </div>
+    </section>
+
+    <section id="page-motivation-3" class="page-section">
+        <div class="fullpage-layout fullpage-layout--tight">
+            <div class="fullpage-text">
+                <h2 class="page-label" id="motivation-label-3"></h2>
+                <h1 class="page-title" id="motivation-title-3"></h1>
+                <blockquote class="page-quote" id="motivation-quote-3"></blockquote>
+                <div id="motivation-body-3"></div>
+            </div>
+            <div class="fullpage-visual" id="motivation-canvas-container-3">
+                <canvas id="motivation-canvas-3" aria-hidden="true"></canvas>
+            </div>
+        </div>
+    </section>
+
+    <!-- Page 5: Quick-start -->
+    <section id="page-quickstart" class="page-section">
+        <div class="fullpage-layout fullpage-layout--center">
+            <div class="fullpage-text fullpage-text--wide quickstart-content">
+                <div class="quickstart-copy">
+                    <h2 class="page-label" id="quickstart-label"></h2>
+                    <h1 class="page-title" id="quickstart-title"></h1>
+                    <p class="page-body" id="quickstart-intro"></p>
+                    <div class="code-block">
+                        <div class="code-block__header">
+                            <span class="code-block__lang">bash</span>
+                            <button class="code-block__copy" id="copy-btn" aria-label="Copy code to clipboard">copy</button>
+                        </div>
+                        <pre class="code-block__pre"><code id="quickstart-code"></code></pre>
+                    </div>
+                    <p class="page-body page-body--muted" id="quickstart-note"></p>
+                </div>
+                <div class="quickstart-showcase-wrap">
+                    <div class="quickstart-showcase" aria-label="Nano World Models generated rollout preview">
+                        <video class="quickstart-showcase__video" autoplay muted loop playsinline preload="metadata">
+                            <source src="assets/grid_video.mp4" type="video/mp4">
+                        </video>
+                    </div>
+                    <p class="quickstart-showcase__caption">All rollouts shown are not cherry-picked</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Page 6: Architecture -->
+    <section id="page-architecture" class="page-section">
+        <div class="fullpage-layout">
+            <div class="fullpage-text">
+                <h2 class="page-label" id="arch-label"></h2>
+                <h1 class="page-title" id="arch-title"></h1>
+                <p class="page-body" id="arch-body"></p>
+                <div class="arch-modules" id="arch-modules"></div>
+            </div>
+            <div class="fullpage-visual" id="architecture-canvas-container">
+                <canvas id="architecture-canvas" aria-hidden="true"></canvas>
+            </div>
+        </div>
+    </section>
+
+    <!-- Page 7: Features -->
+    <section id="page-features" class="page-section">
+        <div class="fullpage-layout fullpage-layout--center fullpage-layout--features">
+            <h2 class="page-label" id="features-label"></h2>
+            <h1 class="page-title" id="features-title"></h1>
+            <p class="interaction-hint" id="features-hint"></p>
+            <div class="features-cards-grid" id="features-track"></div>
+        </div>
+    </section>
+
+    <!-- Page 8: Applications -->
+    <section id="page-applications" class="page-section">
+        <div class="fullpage-layout fullpage-layout--center">
+            <h2 class="page-label" id="applications-label"></h2>
+            <h1 class="page-title" id="applications-title"></h1>
+            <p class="interaction-hint" id="applications-hint"></p>
+            <div class="app-cards" id="app-cards"></div>
+        </div>
+    </section>
+
+    <!-- Page 9: CTA -->
+    <section id="page-cta" class="page-section">
+        <div class="fullpage-layout fullpage-layout--center">
+            <div class="cta-content">
+                <h2 class="page-label" id="cta-label"></h2>
+                <h1 class="page-title" id="cta-title"></h1>
+                <p class="page-body" id="cta-body"></p>
+                <div class="nav-buttons cta-buttons">
+                    <a data-link="cta-github" target="_blank" rel="noopener noreferrer" class="nav-btn nav-btn--primary">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                            <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                        </svg>
+                        <span>View Repository</span>
+                    </a>
+                    <a data-link="cta-models" target="_blank" rel="noopener noreferrer" class="nav-btn nav-btn--primary">
+                        <img src="assets/huggingface-logo.svg" alt="" width="20" height="20" style="display:block;" aria-hidden="true">
+                        <span>View Models</span>
+                    </a>
+                </div>
+                <div class="cta-citation">
+                    <div class="citation-header">
+                        <h3 class="citation-title">Cite this work</h3>
+                        <button class="code-block__copy" id="citation-copy-btn" aria-label="Copy citation to clipboard">copy</button>
+                    </div>
+                    <pre class="citation-code"><code id="cta-citation"></code></pre>
+                    <input class="citation-scroll" id="citation-scroll" type="range" min="0" max="100" value="0" aria-label="Scroll citation horizontally">
+                </div>
+                <p class="footer-copyright" id="cta-copyright"></p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Back to Top -->
+    <button id="back-to-top" class="hidden" aria-label="Back to top"><span aria-hidden="true">↑</span> Back to top</button>
+
+    <!-- Audio Controls -->
+    <div id="audio-controls">
+        <button id="audio-toggle" aria-label="Play audio" aria-pressed="false">
+            <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true">
+                <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" stroke-width="2"/>
+            </svg>
+        </button>
+        <span>SITE AUDIO</span>
+    </div>
+
+    <audio id="site-audio" preload="metadata" loop>
+        <source src="assets/audio/bgm.mp3" type="audio/mpeg">
+    </audio>
+
+    <div class="feature-detail-overlay" id="feature-detail-overlay" aria-hidden="true">
+        <article class="feature-detail-card" role="dialog" aria-modal="true" aria-labelledby="feature-detail-title">
+            <button class="feature-detail-close" type="button" data-feature-close aria-label="Close feature detail">×</button>
+            <span class="feature-detail-num" id="feature-detail-num"></span>
+            <h3 class="feature-detail-title" id="feature-detail-title"></h3>
+            <p class="feature-detail-body" id="feature-detail-body"></p>
+            <ul class="feature-detail-list" id="feature-detail-list"></ul>
+            <img class="feature-detail-image" id="feature-detail-image" alt="">
+            <video class="feature-detail-video" id="feature-detail-video" muted loop playsinline preload="metadata" hidden></video>
+            <p class="feature-detail-caption" id="feature-detail-caption" hidden></p>
+            <a class="feature-detail-link" id="feature-detail-link" href="#" target="_blank" rel="noopener" hidden></a>
+            <div class="feature-detail-table-wrap" id="feature-detail-table" hidden></div>
+        </article>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="content.js?v=31"></script>
+    <script src="script.js?v=20"></script>
+</body>
+</html>
