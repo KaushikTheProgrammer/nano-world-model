@@ -111,12 +111,12 @@ See [training.md](../training.md#design-choices) for the full ablation table.
 
 ## CSGO
 
-Counter-Strike: Global Offensive deathmatch gameplay. Source: [teapearce/counter-strike_deathmatch](https://huggingface.co/datasets/teapearce/counter-strike_deathmatch). 5500 episodes (5000 train / 500 val), 1000 frames each at 3 FPS — ~675 GB total.
+Counter-Strike: Global Offensive deathmatch gameplay. Source: [teapearce/CounterStrike_Deathmatch](https://huggingface.co/datasets/teapearce/CounterStrike_Deathmatch). 5500 episodes (5000 train / 500 val), 1000 frames each at 3 FPS — ~675 GB total.
 
 ### Download
 
 ```bash
-huggingface-cli download teapearce/counter-strike_deathmatch \
+huggingface-cli download teapearce/CounterStrike_Deathmatch \
     --repo-type dataset --local-dir $CSGO_DATA_DIR
 ```
 
