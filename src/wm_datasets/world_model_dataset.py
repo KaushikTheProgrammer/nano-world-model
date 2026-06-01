@@ -74,6 +74,8 @@ class WorldModelDataset(Dataset):
         use_data_source_stats: bool = True,
         _inherit_stats_from: Optional["WorldModelDataset"] = None,
         precomputed_slices: Optional[List[Dict[str, int]]] = None,
+        action_aggregation: str = "concat",
+        action_dt: float = 1.0 / 30.0,
     ):
         super().__init__()
 
@@ -84,6 +86,16 @@ class WorldModelDataset(Dataset):
         # Validate resize_mode
         if resize_mode not in ["stretch", "pad"]:
             raise ValueError(f"resize_mode must be 'stretch' or 'pad', got {resize_mode}")
+
+        # Validate action_aggregation. "concat" (default) stacks the frame_interval per-step
+        # actions into one model-frame action (action_dim = raw_dim * frame_interval). "integrate_se2"
+        # integrates per-step base velocities (v_x [m/s], omega [rad/s]) over the frame_interval
+        # window via unicycle kinematics into a 2-D body-frame displacement (Δx, Δθ). See
+        # NanoNAV context/nanowm-integration.md. The integration MUST mirror scripts/nav_integration.py.
+        if action_aggregation not in ["concat", "integrate_se2"]:
+            raise ValueError(f"action_aggregation must be 'concat' or 'integrate_se2', got {action_aggregation}")
+        self.action_aggregation = action_aggregation
+        self.action_dt = action_dt
 
         self.data_source = data_source
         self.num_frames = num_frames
@@ -115,7 +127,10 @@ class WorldModelDataset(Dataset):
         self._inherit_stats_from = _inherit_stats_from
 
         # Get dataset info
-        self.action_dim = data_source.action_dim * self.frame_interval
+        if self.action_aggregation == "integrate_se2":
+            self.action_dim = 2  # (Δx, Δθ) regardless of frame_interval
+        else:
+            self.action_dim = data_source.action_dim * self.frame_interval
         self.state_dim = data_source.state_dim
         self.num_trajectories = data_source.get_num_trajectories()
 
@@ -336,8 +351,51 @@ class WorldModelDataset(Dataset):
             new_indices.append(index_map[key])
         self.slice_indices = new_indices
 
+    def _se2_deltas(self, actions: torch.Tensor, n_windows: int) -> torch.Tensor:
+        """Integrate per-step base velocities into body-frame (Δx, Δθ) per window.
+
+        actions: [>= n_windows*frame_interval, raw_dim] with raw_dim[0]=v_x (m/s), [1]=omega (rad/s).
+        Returns [n_windows, 2]. Mirrors scripts/nav_integration.body_frame_chunk_deltas (Δy dropped).
+        Vectorized over windows; the short inner loop accumulates heading within a window.
+        """
+        fi, dt = self.frame_interval, self.action_dt
+        a = actions[: n_windows * fi].reshape(n_windows, fi, -1).to(torch.float32)
+        vx = a[..., 0]      # [n_windows, fi]
+        omega = a[..., 1]   # rad/s (the derived dataset stores omega in SI)
+        x = torch.zeros(n_windows, dtype=torch.float32)
+        th = torch.zeros(n_windows, dtype=torch.float32)
+        for i in range(fi):
+            x = x + vx[:, i] * dt * torch.cos(th)
+            th = th + omega[:, i] * dt
+        return torch.stack([x, th], dim=1)
+
+    def _compute_integrated_action_stats(self):
+        """Stats over integrated (Δx, Δθ) for integrate_se2 mode (frame_interval-dependent).
+
+        Computed fresh each run (cheap: a few × 10^4 steps) — deliberately NOT disk-cached, since the
+        cache key does not encode frame_interval/mode and would collide when f changes.
+        """
+        chunks = []
+        for i in self._split_indices():
+            traj = self.data_source.load_trajectory(i)
+            acts = traj.actions[: traj.seq_length]
+            m = acts.shape[0] // self.frame_interval
+            if m > 0:
+                chunks.append(self._se2_deltas(acts, m))
+        all_deltas = torch.cat(chunks, dim=0)
+        self._raw_action_mean = all_deltas.mean(dim=0)
+        self._raw_action_std = all_deltas.std(dim=0) + 1e-6
+        self._broadcast_action_stats()
+        print(
+            f"integrate_se2 action stats ({self.split}, f={self.frame_interval}): "
+            f"mean={self._raw_action_mean.tolist()}, std={self._raw_action_std.tolist()}"
+        )
+
     def _compute_action_stats(self):
         """Fill _raw_action_mean/std (disk cache → data source → compute)."""
+        if self.action_aggregation == "integrate_se2":
+            self._compute_integrated_action_stats()
+            return
         cache_path = self._cache_path("action")
         cached = stats_cache.load(cache_path)
         if cached is not None:
@@ -410,6 +468,11 @@ class WorldModelDataset(Dataset):
 
     def _broadcast_action_stats(self) -> None:
         """Tile raw stats to match self.action_dim (post frame_interval reshape)."""
+        if self.action_aggregation == "integrate_se2":
+            # Stats are already the 2-D (Δx, Δθ) distribution — no per-step tiling.
+            self.action_mean = self._raw_action_mean
+            self.action_std = self._raw_action_std
+            return
         if self.frame_interval > 1:
             self.action_mean = self._raw_action_mean.repeat(self.frame_interval)
             self.action_std = self._raw_action_std.repeat(self.frame_interval)
@@ -577,17 +640,20 @@ class WorldModelDataset(Dataset):
                     value=0.0
                 )
 
-        if self.normalize_action:
-            # Normalize on raw per-dim stats (shape matches actions_full's last dim).
-            actions_full = (actions_full - self._raw_action_mean) / self._raw_action_std
-
-        if self.frame_interval > 1:
+        # Aggregate per-step actions into model-frame actions, THEN normalize. Aggregation runs on
+        # PHYSICAL (un-normalized) values — required for SE(2) integration, and equivalent to the
+        # old per-step normalization for concat (tiled stats match the concatenated layout).
+        if self.action_aggregation == "integrate_se2":
+            actions = self._se2_deltas(actions_full, self.num_frames)  # [num_frames, 2]
+        elif self.frame_interval > 1:
             required_actions = self.num_frames * self.frame_interval
-            actions_full = actions_full[:required_actions]
-            actions = actions_full.reshape(self.num_frames, self.frame_interval, -1).reshape(self.num_frames, -1)
+            af = actions_full[:required_actions]
+            actions = af.reshape(self.num_frames, self.frame_interval, -1).reshape(self.num_frames, -1)
         else:
-            actions = actions_full[::self.frame_interval]
-            actions = actions[:self.num_frames]
+            actions = actions_full[::self.frame_interval][:self.num_frames]
+
+        if self.normalize_action:
+            actions = (actions - self.action_mean) / self.action_std
 
         if self.normalize_state:
             states = (states - self.state_mean) / self.state_std
@@ -688,6 +754,10 @@ def create_world_model_dataset(
     Returns:
         WorldModelDataset instance
     """
+    # Action aggregation options (consumed by WorldModelDataset, not the data source).
+    action_aggregation = kwargs.pop("action_aggregation", "concat")
+    action_dt = kwargs.pop("action_dt", 1.0 / 30.0)
+
     # Create data source
     data_source_kwargs = {
         "dataset_name": dataset_name,
@@ -729,6 +799,8 @@ def create_world_model_dataset(
         stride=stride,
         fixed_start_indices=fixed_start_indices,
         resize_mode=resize_mode,
+        action_aggregation=action_aggregation,
+        action_dt=action_dt,
     )
 
     return dataset
@@ -778,6 +850,11 @@ def create_train_val_datasets(
         (train_dataset, val_dataset)
     """
     import os
+
+    # Action-aggregation options flow to create_world_model_dataset via **kwargs (popped there),
+    # but the shared-source val branch below builds WorldModelDataset directly, so read them here too.
+    _action_aggregation = kwargs.get("action_aggregation", "concat")
+    _action_dt = kwargs.get("action_dt", 1.0 / 30.0)
 
     def _resolve_path(path: Optional[str]) -> Optional[str]:
         """Resolve relative paths from project root when Hydra has changed cwd to run dir."""
@@ -941,6 +1018,8 @@ def create_train_val_datasets(
             fixed_start_indices=val_start_indices_array,
             resize_mode=resize_mode,
             _inherit_stats_from=train_dataset,
+            action_aggregation=_action_aggregation,
+            action_dt=_action_dt,
         )
 
     return train_dataset, val_dataset
@@ -986,6 +1065,9 @@ def create_eval_only_dataset(
 
     val_path = data_path_val or data_path
 
+    action_aggregation = kwargs.pop("action_aggregation", "concat")
+    action_dt = kwargs.pop("action_dt", 1.0 / 30.0)
+
     data_source_kwargs = {
         "dataset_name": dataset_name,
         "n_rollout": n_rollout,
@@ -1022,4 +1104,6 @@ def create_eval_only_dataset(
         resize_mode=resize_mode,
         use_data_source_stats=True,
         precomputed_slices=precomputed_slices,
+        action_aggregation=action_aggregation,
+        action_dt=action_dt,
     )

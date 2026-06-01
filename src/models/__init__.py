@@ -37,7 +37,15 @@ def get_models(args):
     if 'NanoWM' not in args.model.arch:
         raise ValueError(f"{args.model.arch} Model Not Supported!")
 
-    action_dim = args.dataset.spec.action_dim * args.dataset.frame_interval
+    # Must match WorldModelDataset.action_dim. The "integrate_se2" aggregation collapses the
+    # frame_interval per-step velocities into a single 2-D (Δx, Δθ) per model frame, so the model's
+    # action embedder takes spec.action_dim (=2), NOT spec.action_dim * frame_interval.
+    loader_cfg = args.dataset.get("loader", {}) if hasattr(args.dataset, "get") else getattr(args.dataset, "loader", {})
+    action_aggregation = loader_cfg.get("action_aggregation", "concat") if hasattr(loader_cfg, "get") else getattr(loader_cfg, "action_aggregation", "concat")
+    if action_aggregation == "integrate_se2":
+        action_dim = args.dataset.spec.action_dim
+    else:
+        action_dim = args.dataset.spec.action_dim * args.dataset.frame_interval
     return NanoWM_models[args.model.arch](
         input_size=get_model_latent_size(args),
         in_channels=get_model_latent_channels(args),

@@ -1,0 +1,19 @@
+defaults:
+  - default
+
+# NanoNAV first checkpoint: NanoWM-B/2 on LeKiwi nav data, single RunPod H100.
+# Launch: python src/main.py experiment=lekiwi_nav dataset=lerobot/lekiwi model=nanowm_b2
+#
+# Effective batch = batch_size * gradient_accumulation * num_gpus = 16 * 4 * 1 = 64.
+# Start conservative on 80 GB (256^2 SD-VAE latents); if memory allows, raise batch_size and drop
+# gradient_accumulation to keep eff-bs 64. If OOM, do the reverse.
+training:
+  max_steps: 50000          # conservative first checkpoint (context/training.md)
+  batch_size: 16
+  gradient_accumulation: 4
+
+infra:
+  num_workers: 16           # av1 video decode is CPU-bound; raise if GPU util < 80%
+
+# Objective is the design default already set in experiment/default.yaml:
+# v-prediction + squaredcos + zero-terminal-SNR. Nothing to override here.

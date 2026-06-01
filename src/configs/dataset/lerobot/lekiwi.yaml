@@ -1,0 +1,26 @@
+defaults:
+  - lerobot/base
+
+name: "lekiwi"
+# f=5 -> 167ms chunk. The dataloader INTEGRATES the per-step base velocities over this window into
+# a 2-D body-frame (Δx, Δθ) (action_aggregation=integrate_se2). Source stays 30 Hz, so f is a pure
+# config knob — bump to 8-10 later for more reach without rebuilding the dataset.
+frame_interval: 5
+
+loader:
+  # Derived LeRobot v2.1 dataset built by NanoNAV scripts/build_lekiwi_nav_dataset.py:
+  # 30 Hz, top camera only, raw base action [x.vel (m/s), omega (rad/s)].
+  data_path: "kaushikpraka/wm-smallarea_nav30"
+  root: "${oc.env:LEKIWI_DATA_ROOT,./data/lekiwi}"
+  image_key: "observation.images.top"
+  normalize_action: True
+  normalize_state: False
+  # Integrate base velocities -> (Δx, Δθ). Mirrors NanoNAV scripts/nav_integration.py.
+  action_aggregation: "integrate_se2"
+  action_dt: 0.0333333333          # 1/30 s (dataset fps); used by SE(2) integration
+  train_slice_mode: "exhaustive"   # 50 episodes -> exhaustive is fine
+  val_slice_mode: "exhaustive"
+
+spec:
+  # Model-frame action dim (the integrated (Δx, Δθ)). NOT multiplied by frame_interval.
+  action_dim: 2
