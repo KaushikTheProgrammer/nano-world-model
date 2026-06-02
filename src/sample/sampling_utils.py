@@ -6,8 +6,15 @@ Provides VAE encoding/decoding, video saving, and frame resizing.
 import torch
 import imageio
 from einops import rearrange
+from omegaconf import OmegaConf
 
 from utils.vae_ops import encode_first_stage, decode_first_stage
+
+# Saved training configs carry ${hydra:...} interpolations (e.g. planning.output_dir) that only
+# resolve inside a live Hydra run. The sampling/rollout scripts load + resolve those configs
+# standalone, so register a stub here (imported by sample_dfot.py and rollout.py) to avoid a crash.
+if not OmegaConf.has_resolver("hydra"):
+    OmegaConf.register_new_resolver("hydra", lambda *a, **k: ".")
 
 
 def encode_frames(vae, frames, device, vae_precision: str = "fp32"):

@@ -22,17 +22,30 @@ Usage (on the pod, after training):
 """
 
 import argparse
+import os
+import sys
 from pathlib import Path
 
 import numpy as np
 import torch
 from omegaconf import OmegaConf
 
+# Make the repo's src/ importable when run as `python src/sample/action_diagnostic.py` from the repo
+# root (mirrors rollout.py / sample_dfot.py). Without it, `from diffusion import ...` raises
+# ModuleNotFoundError.
+sys.path.append(os.path.split(sys.path[0])[0])
+
 from diffusion import create_diffusion
 from latent_codecs import build_latent_codec
 from models import get_models
 from planning import DiffusionWorldModel
 from wm_datasets import create_train_val_datasets
+
+# The saved training config carries ${hydra:...} interpolations (e.g. planning.output_dir) that only
+# resolve inside a live Hydra run. Register a stub so OmegaConf.resolve() doesn't crash when we load
+# that config here for inference (the diagnostic never uses those fields).
+if not OmegaConf.has_resolver("hydra"):
+    OmegaConf.register_new_resolver("hydra", lambda *a, **k: ".")
 
 
 def load_checkpoint(ckpt_path: str, device):
