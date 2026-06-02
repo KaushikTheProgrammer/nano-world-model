@@ -3,11 +3,22 @@ channels:
   - pytorch
   - nvidia
 dependencies:
-  - python >= 3.10
-  - pytorch > 2.0.0
-  - torchvision
-  - pytorch-cuda >= 11.7
+  # Pin Python: lerobot 0.3.3 / numpy / scipy have no wheels for 3.13+ (an unpinned
+  # ">=3.10" lets conda pick 3.14 and the pip stage fails to resolve).
+  - python=3.11
   - pip:
+    # Install torch from the CUDA (cu124) wheel index so we get GPU builds via pip
+    # (the conda pytorch channel can't provide the torchvision>=0.21 that lerobot 0.3.3 needs).
+    - --extra-index-url https://download.pytorch.org/whl/cu124
+    # torch/vision/codec triple compatible with lerobot 0.3.3's pins
+    # (torch>=2.2.1,<2.8 ; torchvision>=0.21,<0.23 ; torchcodec>=0.2.1,<0.6).
+    # Pin the +cu124 local builds so the GPU wheels are fetched (not the ABI-mismatched PyPI ones).
+    # torchcodec must be the cu124 build matched to torch 2.6 (0.2.1+cu124 is the latest on that
+    # index); a plain PyPI torchcodec fails to load with an undefined c10::Device symbol.
+    - torch==2.6.0+cu124
+    - torchvision==0.21.0+cu124
+    - torchcodec==0.2.1+cu124
+
     # Core ML
     - numpy
     - scipy
@@ -20,13 +31,28 @@ dependencies:
     - einops
     - lpips
     - piqa
-    - pytorch-lightning==1.9.5
+    # Upgraded 1.9.5 -> 2.5.2: the training code uses PL 2.x APIs (Trainer precision="bf16-mixed",
+    # strategy="auto", on_train_epoch_end/on_validation_epoch_end hooks) that 1.9.5 rejects. 2.5.x
+    # supports torch 2.6. The original 1.9.5 pin was as stale as the bogus lerobot-datasets one.
+    - pytorch-lightning==2.5.2
+    # lightning still imports pkg_resources, which setuptools removed in 81. Keep it available.
+    - setuptools<81
     - torchmetrics
 
     # Diffusion / generative
-    - diffusers[torch]==0.24.0
+    # Bumped 0.24.0 -> 0.32.2. Two constraints fix the version: (1) huggingface-hub removed
+    # `cached_download` in 0.26 (lerobot 0.3.3 needs hub>=0.34.2), so diffusers must be >=0.28 which
+    # dropped that import; (2) diffusers' `[torch]` extra capped torch<2.5.0 through 0.31.x, but
+    # lerobot's torchvision>=0.21 forces torch 2.6 — 0.32.0 lifted that cap (torch>=1.4). 0.32.2
+    # still exposes the stable APIs nanowm uses (AutoencoderKL, get_scheduler, diffusers.utils.is_*).
+    - diffusers[torch]==0.32.2
     - accelerate
-    - transformers
+    # Pin <5.0: transformers 5.x pulls huggingface-hub 1.x and torchvision>0.21, breaking the
+    # diffusers 0.31 / lerobot 0.3.3 / cu124-torchvision stack. 4.46.x pairs with diffusers 0.31.
+    - transformers==4.46.3
+    # Cap huggingface-hub below the 1.x rewrite: 1.x removes the `huggingface-cli`/`hf-transfer`
+    # extras and breaks diffusers 0.31 / lerobot 0.3.3. >=0.34.2 satisfies lerobot's floor.
+    - huggingface-hub>=0.34.2,<1.0
 
     # Config & experiment management
     - omegaconf
@@ -35,8 +61,11 @@ dependencies:
     - wandb
 
     # Data & datasets
-    - lerobot
-    - lerobot-datasets==2.1.0
+    # NOTE: the v2.1 "dataset codec" version is NOT a package version. The package is `lerobot`;
+    # 0.3.3 is the only release whose loader exposes the new `lerobot.datasets.lerobot_dataset`
+    # import path AND the v2.x `episode_data_index["from"/"to"]` API AND writes CODEBASE_VERSION
+    # "v2.1" (0.1.x uses the old `common.` path; 0.4.x dropped episode_data_index / writes v3.0).
+    - lerobot==0.3.3
     - decord
     - h5py
     - pandas

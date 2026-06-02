@@ -22,7 +22,11 @@ class LeRobotDataSource(DataSource):
         root: Optional[str] = None,
         image_key: str = "observation.images.image",
         pad_action_dim: Optional[int] = None,
+        video_backend: str = "pyav",
     ):
+        # video_backend="pyav" (av's bundled FFmpeg) decodes AV1 reliably. lerobot's default
+        # "torchcodec" binds to the *system* FFmpeg, which on Ubuntu 22.04 is 4.4 — its av1-in-mp4
+        # demuxer intermittently raises "No valid stream found", especially under dataloader workers.
         try:
             from lerobot.datasets.lerobot_dataset import LeRobotDataset
             from torchvision.transforms import v2
@@ -47,7 +51,8 @@ class LeRobotDataSource(DataSource):
                     repo_id=repo_id,
                     root=root,
                     image_transforms=None,
-                    episodes=None
+                    episodes=None,
+                    video_backend=video_backend,
                 )
                 num_total = temp_dataset.num_episodes
                 n_episodes = int(num_total * n_rollout)
@@ -62,7 +67,8 @@ class LeRobotDataSource(DataSource):
             repo_id=repo_id,
             root=root,
             image_transforms=None,
-            episodes=episodes
+            episodes=episodes,
+            video_backend=video_backend,
         )
 
         self.num_episodes = self.dataset.num_episodes
@@ -166,13 +172,18 @@ class LeRobotDataSource(DataSource):
         start_idx, end_idx = self._episode_global_range(index)
         length = end_idx - start_idx
 
+        # Read action/state straight from the parquet (hf_dataset) — NOT self.dataset[frame_idx],
+        # which decodes the video frame for every index. A trajectory's states/actions carry no
+        # pixels, so decoding video here is pure waste: it made action-stats / trajectory loading
+        # ~60s per episode (per-frame video seeks) vs ~0.04s reading the columns directly. Images are
+        # loaded separately via load_visual_frames().
+        hf = self.dataset.hf_dataset
         states = []
         actions = []
-
         for frame_idx in range(start_idx, end_idx):
-            item = self.dataset[frame_idx]
-            states.append(item["observation.state"])
-            actions.append(item["action"])
+            row = hf[frame_idx]
+            states.append(torch.as_tensor(row["observation.state"], dtype=torch.float32))
+            actions.append(torch.as_tensor(row["action"], dtype=torch.float32))
 
         states_tensor = torch.stack(states, dim=0)
         actions_tensor = torch.stack(actions, dim=0)

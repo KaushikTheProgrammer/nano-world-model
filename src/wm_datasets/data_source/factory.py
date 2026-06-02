@@ -48,10 +48,11 @@ def create_data_source(
             **kwargs
         )
 
-    if dataset_name == "rt1":
-        # RT-1 is consumed as the lerobot HF dataset (fractal20220817_data).
-        # `data_path` is the HF repo_id; optional `root` kwarg points to a
-        # local mirror. No per-episode .pth format is supported.
+    if dataset_name in ["rt1", "lekiwi"]:
+        # LeRobot-backed datasets (RT-1 fractal, and the LeKiwi nav set). `data_path` is the HF
+        # repo_id; optional `root` kwarg points to a local mirror. The (Δx, Δθ) integration for
+        # lekiwi happens later in the world-model dataset (action_aggregation=integrate_se2), so the
+        # data source just reads raw frames/actions/state — same kwargs as rt1.
         lerobot_params = {'root', 'image_key', 'preload_trajectories', 'episodes'}
         lerobot_kwargs = {k: v for k, v in kwargs.items() if k in lerobot_params}
         return LeRobotDataSource(
