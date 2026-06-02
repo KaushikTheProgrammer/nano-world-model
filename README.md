@@ -9,6 +9,29 @@
 <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"/></a>
 </div>
 
+> ## 🤖 This is the NanoNAV fork
+>
+> This is a fork of [simchowitzlabpublic/nano-world-model](https://github.com/simchowitzlabpublic/nano-world-model)
+> maintained for **[NanoNAV](https://github.com/KaushikTheProgrammer/NanoNAV)** — goal-conditioned
+> navigation for a LeKiwi mobile robot, where NanoWM is the action-conditioned world model and CEM/MPC
+> plans over predicted futures. **Upstream usage is unchanged**; everything below still applies. NanoNAV
+> adds, on top of upstream:
+>
+> - **`integrate_se2` action aggregation** (`src/wm_datasets/world_model_dataset.py`, `models/__init__.py`):
+>   integrates per-step base velocities over `frame_interval` into a 2-D body-frame `(Δx, Δθ)` action,
+>   instead of concatenating the raw per-step actions. (Default stays `concat`; upstream-compatible.)
+> - **LeKiwi nav configs** — `configs/dataset/lerobot/lekiwi.yaml`, `configs/experiment/lekiwi_nav.yaml`
+>   (`python src/main.py experiment=lekiwi_nav dataset=lerobot/lekiwi model=nanowm_b2`).
+> - **`src/sample/action_diagnostic.py`** — the Table 5/6 action-conditioning gate (GT vs zero vs random
+>   rollouts, action-embedding RMS).
+> - **Env / loader fixes to actually run** (see the NanoNAV `context/` notes): the dependency stack in
+>   `environment.yml` is repaired (installable `lerobot==0.3.3`, `pytorch-lightning==2.5.2`, cu124 torch
+>   stack, etc.); the data-source factory routes the `lekiwi` dataset; the LeRobot data source defaults
+>   to the `pyav` video backend and reads actions/state from the parquet rather than decoding video.
+>
+> The design rationale (why SE(2) deltas, SD-VAE, the camera, etc.) lives in the NanoNAV repo's
+> `context/` directory, not here.
+
 A minimalist repository for training video world models based on diffusion-forcing.
 
 <div align="center">
