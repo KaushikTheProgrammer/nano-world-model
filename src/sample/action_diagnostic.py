@@ -98,7 +98,12 @@ def main():
     ap.add_argument("--n-batches", type=int, default=8)
     ap.add_argument("--num-sampling-steps", type=int, default=20)
     ap.add_argument("--out", default="action_diag")
+    ap.add_argument("--seed", type=int, default=42,
+                    help="seed torch+numpy so the random-action baseline and diffusion noise are "
+                         "identical across checkpoints (fair cross-checkpoint comparison)")
     args = ap.parse_args()
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
     out = Path(args.out); out.mkdir(parents=True, exist_ok=True)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 

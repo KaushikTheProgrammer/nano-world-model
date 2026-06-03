@@ -47,6 +47,7 @@ def main():
     ap.add_argument("--per-category", type=int, default=3)
     ap.add_argument("--num-sampling-steps", type=int, default=50)
     ap.add_argument("--fps", type=int, default=2)
+    ap.add_argument("--seed", type=int, default=42, help="seed diffusion noise for fair cross-checkpoint comparison")
     # selection thresholds (physical units; defaults tuned for f=10)
     ap.add_argument("--trans-dth-max", type=float, default=3.0, help="max |net Δθ| (deg) for a translation chunk")
     ap.add_argument("--rot-dx-max", type=float, default=2.0, help="max |net Δx| (cm) for a rotation chunk")
@@ -56,6 +57,8 @@ def main():
 
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
     torch.set_grad_enabled(False)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
