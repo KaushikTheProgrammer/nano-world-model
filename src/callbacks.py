@@ -37,6 +37,11 @@ class CUDACallback(Callback):
         self.start_time = time.time()
 
     def on_train_epoch_end(self, trainer, pl_module):
+        # On native (ckpt_path) resume we drop in mid-epoch, so on_train_epoch_start never ran for
+        # this partial epoch and start_time is unset. Epoch timing is non-essential telemetry — skip
+        # it rather than crash the run (this killed the first Run 002 resume at the epoch 8->9 boundary).
+        if not hasattr(self, "start_time"):
+            return
         gpu_index = self._gpu_index(trainer)
         torch.cuda.synchronize(gpu_index)
         max_memory = torch.cuda.max_memory_allocated(gpu_index) / 2 ** 20
