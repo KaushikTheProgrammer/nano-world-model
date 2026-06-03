@@ -8,9 +8,23 @@ defaults:
 # Start conservative on 80 GB (256^2 SD-VAE latents); if memory allows, raise batch_size and drop
 # gradient_accumulation to keep eff-bs 64. If OOM, do the reverse.
 training:
-  max_steps: 50000          # conservative first checkpoint (context/training.md)
+  # Run 002: Run 001 overfit (val bottomed ~epoch 3 / ~step 1.8K) and kept no best-val ckpt, so an
+  # overfit epoch-16 model got diagnosed. Stop early, validate finely, keep the val-optimum.
+  max_steps: 12000          # ~20 epochs (~600 opt-steps/epoch); best_val callback keeps the optimum
   batch_size: 16
   gradient_accumulation: 4
+  val_every_n_steps: 250    # 50 eps is tiny; sample val finely to catch the bottom (was 1000)
+  checkpointing:
+    across_timesteps:
+      every_n_train_steps: 1000   # was 10000
+    latest:
+      every_n_train_steps: 500    # was 1000
+    best_val:
+      enable: true
+      monitor: val_loss
+      mode: min
+      save_top_k: 3
+      filename: "best-{epoch}-{step}-{val_loss:.4f}"
 
 infra:
   num_workers: 16           # av1 video decode is CPU-bound; raise if GPU util < 80%

@@ -2,10 +2,11 @@ defaults:
   - lerobot/base
 
 name: "lekiwi"
-# f=5 -> 167ms chunk. The dataloader INTEGRATES the per-step base velocities over this window into
-# a 2-D body-frame (Δx, Δθ) (action_aggregation=integrate_se2). Source stays 30 Hz, so f is a pure
-# config knob — bump to 8-10 later for more reach without rebuilding the dataset.
-frame_interval: 5
+# f=10 -> 333ms chunk (Run 002; was 5). The dataloader INTEGRATES the per-step base velocities over
+# this window into a 2-D body-frame (Δx, Δθ) (action_aggregation=integrate_se2). Source stays 30 Hz,
+# so f is a pure config knob — no dataset rebuild. f=10 lifts translation's SNR over the non-action
+# latent floor from ~1:1 (f=5) to ~1.6:1 (AUC 0.94->0.98); see viz/stationary-vs-translation/.
+frame_interval: 10
 
 loader:
   # Derived LeRobot v2.1 dataset built by NanoNAV scripts/build_lekiwi_nav_dataset.py:
@@ -20,6 +21,12 @@ loader:
   action_dt: 0.0333333333          # 1/30 s (dataset fps); used by SE(2) integration
   train_slice_mode: "exhaustive"   # 50 episodes -> exhaustive is fine
   val_slice_mode: "exhaustive"
+  # Run 002 val monitor: replace base.yaml's validation_size:32 (first-32 in-order slices from the
+  # opening ~0.5s of ONE episode — non-representative) with a seeded, fixed random subset spread
+  # across all 5 held-out episodes. validation_size MUST be null or it re-truncates the fixed subset
+  # to 32 (it runs after _apply_fixed_validation_subset). Makes monitor=val_loss meaningful.
+  validation_size: null
+  validation_fixed_subset_size: 256   # 256/16 = 16 val batches; seed 42 inherited from base.yaml
 
 spec:
   # Model-frame action dim (the integrated (Δx, Δθ)). NOT multiplied by frame_interval.

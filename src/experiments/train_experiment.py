@@ -818,6 +818,22 @@ class TrainExperiment(BaseExperiment):
         )
         callbacks_list.append(latest_checkpoint)
 
+        # Best-val checkpoint (Run 002). Backward-compatible: configs without a
+        # checkpointing.best_val block keep the old latest+across_timesteps behaviour.
+        best_val_cfg = ckpt_cfg.get("best_val", None)
+        if best_val_cfg is not None and best_val_cfg.get("enable", True):
+            best_val_checkpoint = ModelCheckpoint(
+                dirpath=os.path.join(checkpoint_dir, "best_val"),
+                filename=best_val_cfg.get("filename", "best-{epoch}-{step}-{val_loss:.4f}"),
+                monitor=best_val_cfg.get("monitor", "val_loss"),      # logged at train_experiment.py:295
+                mode=best_val_cfg.get("mode", "min"),
+                save_top_k=best_val_cfg.get("save_top_k", 3),
+                every_n_train_steps=best_val_cfg.get("every_n_train_steps", None),  # None -> saves at each val end
+                save_on_train_epoch_end=False,
+                save_weights_only=best_val_cfg.get("save_weights_only", False),
+            )
+            callbacks_list.append(best_val_checkpoint)
+
         num_gpus = torch.cuda.device_count()
         num_nodes = args.experiment.infra.get("num_nodes", 1)
         val_check_interval = args.experiment.training.val_every_n_steps
