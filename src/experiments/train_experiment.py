@@ -857,7 +857,13 @@ class TrainExperiment(BaseExperiment):
 
         # exec() already dispatches on self.tasks, so training() only does fit.
         # Evaluation is handled by the separate evaluate() method.
-        trainer.fit(pl_module, train_dataloaders=train_loader, val_dataloaders=val_loader)
+        # ckpt_path = Lightning NATIVE resume (restores optimizer/LR/global_step/loops) — distinct from
+        # experiment.resume_from_checkpoint, which only warm-starts weights and restarts the step counter.
+        resume_ckpt = args.experiment.get("ckpt_path", None)
+        if resume_ckpt and is_rank_zero:
+            self.logger.info(f"[resume] Lightning native resume from: {resume_ckpt}")
+        trainer.fit(pl_module, train_dataloaders=train_loader, val_dataloaders=val_loader,
+                    ckpt_path=resume_ckpt)
 
         pl_module.model.eval()
         self.logger.info("Done!")

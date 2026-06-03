@@ -1,6 +1,7 @@
 name: train
 tasks: [training]
-resume_from_checkpoint: null
+resume_from_checkpoint: null   # warm-start weights only (manual state_dict load; restarts step counter)
+ckpt_path: null                # Lightning NATIVE resume (full optimizer/LR/step/loop state) — set to a .ckpt to continue a run
 pretrained: null
 
 training:
