@@ -179,17 +179,28 @@ class MetricsLogger(Callback):
                         pl_module.log(f"val_eval/{key}", mean_value, on_epoch=True, prog_bar=True, logger=True, sync_dist=False)
                         mainlogger.info(f"Epoch end val {key}: {mean_value}")
                 
+                # FVD/FID are non-essential generation-quality metrics. A failure here (e.g. the
+                # scipy>=1.17 sqrtm `disp` deprecation breaking pytorch_fid's tuple unpack on a
+                # singular covariance) must NEVER crash training — it killed Run 002 at step 5000.
                 if mu_pred is not None and mu_true is not None:
-                    m = np.square(mu_pred - mu_true).sum()
-                    s = scipy.linalg.sqrtm(np.dot(sigma_pred, sigma_true))
-                    fvd = np.real(m + np.trace(sigma_pred + sigma_true - s * 2))
-                    pl_module.log("val_eval/fvd", fvd, on_epoch=True, prog_bar=True, logger=True, sync_dist=False)
-                    mainlogger.info(f"Epoch end val fvd: {fvd}")
+                    try:
+                        m = np.square(mu_pred - mu_true).sum()
+                        s = scipy.linalg.sqrtm(np.dot(sigma_pred, sigma_true))
+                        if isinstance(s, tuple):  # older scipy returns (sqrtm, errest)
+                            s = s[0]
+                        fvd = np.real(m + np.trace(sigma_pred + sigma_true - s * 2))
+                        pl_module.log("val_eval/fvd", fvd, on_epoch=True, prog_bar=True, logger=True, sync_dist=False)
+                        mainlogger.info(f"Epoch end val fvd: {fvd}")
+                    except Exception as e:
+                        mainlogger.warning(f"FVD computation failed, skipping: {e}")
 
                 if mu_real is not None and mu_fake is not None:
-                    fid = calculate_frechet_distance(mu_real, sigma_real, mu_fake, sigma_fake)
-                    pl_module.log("val_eval/fid", fid, on_epoch=True, prog_bar=True, logger=True, sync_dist=False)
-                    mainlogger.info(f"Epoch end val fid: {fid}")
+                    try:
+                        fid = calculate_frechet_distance(mu_real, sigma_real, mu_fake, sigma_fake)
+                        pl_module.log("val_eval/fid", fid, on_epoch=True, prog_bar=True, logger=True, sync_dist=False)
+                        mainlogger.info(f"Epoch end val fid: {fid}")
+                    except Exception as e:
+                        mainlogger.warning(f"FID computation failed, skipping: {e}")
 
             self.val_metrics_buffer = {}
             torch.cuda.empty_cache()
