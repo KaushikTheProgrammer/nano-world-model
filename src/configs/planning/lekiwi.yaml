@@ -1,0 +1,59 @@
+# LeKiwi short-range CEM/MPC planning config (NanoNAV Stage 6).
+#
+# RECORD / SCAFFOLD ONLY. Stage 6a (offline planning eval) runs as a standalone
+# script — `src/sample/offline_planning_eval.py` — whose CLI flags supersede this
+# file (LeKiwi has no steppable sim env, so `PlanningExperiment._run_mpc` does not
+# apply offline; see context/planning.md "6a — Offline Planning Eval"). This config
+# captures the eval-grounded parameters so 6b (closed-loop, on-robot) can route the
+# SAME planner through the experiment harness once a real LeKiwi env exists.
+#
+# Two integrate_se2 traps the harness still needs fixed before 6b uses it:
+#   - planning_experiment.py:108  action_dim_total = action_dim * frame_interval
+#     → with integrate_se2 that's 2*10 = 20, a wrong 20-D CEM search. Must be 2.
+#   - _run_mpc  act.reshape(frame_interval, -1) to un-pack concat actions —
+#     meaningless for integrated (Δx, Δθ) deltas.
+# The standalone 6a script sidesteps both (action_dim=2, no reshape).
+
+env_name: lekiwi          # NOTE: no registry env yet — built in 6b (real-robot interface).
+
+n_evals: 36
+seed: 42
+n_plot_samples: 8
+output_dir: ${hydra:runtime.output_dir}/planning_results
+
+# Goals are sampled from real forward val trajectories (guaranteed reachable in
+# goal_H chunks), graded against the dataset answer key.
+goal_source: dset
+goal_H: 3                 # 3 chunks ≈ 10 cm / ~18° at f=10 — inside the reliable rollout window.
+
+# Stop-and-plan MPC: plan H, execute the first chunk, re-observe, replan.
+horizon: 3
+replan_every: 1
+max_episode_steps: 30
+
+# Validated cheap-sampler regime (results/offline_planning_step8000 + the DDIM
+# sweep): DDIM=3 holds quality vs DDIM=20 → ~7 s/replan. Pivot/pure-rotation control
+# is what softens first at DDIM=3; fall back to 5 if a turn-heavy task degrades.
+num_sampling_steps: 3
+eta: 0.0
+
+# CEM optimizer — eval-grounded cheap config (32 × 3 × top-10 → ~7 s/replan at DDIM=3).
+cem:
+  num_samples: 32
+  topk: 10
+  opt_steps: 3
+  var_scale: 1.0
+  eval_every: 3
+  sigma_min: 1e-3
+  action_low: null        # normalized (Δx, Δθ) search; data range is per-dim asymmetric,
+  action_high: null       # so we leave it unclipped (WM penalizes OOD actions via goal mismatch).
+  rollout_batch_size: null
+
+# Latent-L2 on the final predicted frame (valid < ~30 cm; longer routes need the
+# waypoint scaffold — Stage 6c).
+objective:
+  mode: "last"
+  alpha: 1.0
+  base: 2.0
+  visual_metric: "mse"
+  token_dim: null
