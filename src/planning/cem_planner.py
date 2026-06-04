@@ -128,6 +128,7 @@ class CEMPlanner:
         obs_0: Dict[str, torch.Tensor],
         obs_g: Dict[str, torch.Tensor],
         actions: Optional[torch.Tensor] = None,
+        return_elites: bool = False,
     ) -> Tuple[torch.Tensor, Dict]:
         """
         Plan action sequence to reach goal observation.
@@ -159,6 +160,7 @@ class CEMPlanner:
         mu, sigma = mu.to(self.device), sigma.to(self.device)
 
         losses_history = []
+        elite_actions = None  # final-iteration top-k elites (for viz), if return_elites
 
         for i in range(self.opt_steps):
             # Optimize each instance in batch
@@ -199,6 +201,11 @@ class CEMPlanner:
                 mu[b] = topk_actions.mean(dim=0)
                 sigma[b] = topk_actions.std(dim=0).clamp(min=self.sigma_min)
 
+                # Surface the final iteration's elites for visualization (the candidates CEM
+                # selected). batch_size is 1 in the LeKiwi path, so the last b wins.
+                if return_elites and i == self.opt_steps - 1:
+                    elite_actions = topk_actions.detach().cpu()  # [topk, horizon, action_dim], normalized
+
             avg_loss = np.mean(batch_losses)
             losses_history.append(avg_loss)
 
@@ -210,5 +217,7 @@ class CEMPlanner:
             "final_loss": losses_history[-1],
             "num_iterations": self.opt_steps,
         }
+        if return_elites:
+            info["elite_actions"] = elite_actions  # [topk, horizon, action_dim] (cpu) or None
 
         return mu, info
