@@ -57,3 +57,18 @@ objective:
   base: 2.0
   visual_metric: "mse"
   token_dim: null
+
+# integrate_se2 (Δx, Δθ) action denormalization stats — f=10, derived + printed by the 6a
+# offline eval (results/offline_planning_step8000/run.log), confirmed by the 6b.2 engine
+# smoke-test. LekiwiPlanner converts CEM's normalized action to metric (Δx m, Δθ rad) with these.
+#
+# HARD PRECONDITION for closed-loop (6b.3): these MUST be passed to LekiwiPlanner explicitly.
+# The engine's only other source is rebuilding the val dataset, which is DEAD on the pod —
+# LeRobotDataset phones the HF Hub for the version ref even with a local root (private repo → 401)
+# and lerobot v3.0 can't read the v2.1 codec; the stats are not stored in the checkpoint either.
+# A wrong/zero std silently rescales every command (a zero std zeros all motion).
+# `scripts/lekiwi_mpc.py` wires these in as the --action-mean/--action-std defaults; this block is
+# the canonical record (and the source if the harness ever routes through this config).
+action_stats:
+  mean: [0.022110389545559883, -0.0005879045929759741]   # (Δx m, Δθ rad)
+  std:  [0.014105414971709251, 0.07071184366941452]
