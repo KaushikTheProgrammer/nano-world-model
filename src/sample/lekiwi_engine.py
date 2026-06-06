@@ -126,8 +126,12 @@ class LekiwiPlanner:
 
     def _preprocess(self, frame):
         """
-        Raw HWC RGB robot frame -> [1,1,C,256,256] in [0,1], letterbox-padded — IDENTICAL to the
-        dataset transform (world_model_dataset.py:614-641; lerobot loader returns [0,1] CHW RGB).
+        Raw HWC RGB robot frame -> [1,1,C,256,256] in [-1,1], letterbox-padded — IDENTICAL to the
+        dataset transform (world_model_dataset.py: letterbox-pad with value=0 in [0,1], THEN
+        `video = video*2-1` when normalize_pixel=True, the training default). The VAE was trained on
+        [-1,1] pixels; feeding [0,1] here put z0/z_goal in a distribution the WM never saw and broke
+        CEM's descent direction (dist_to_goal pinned, theta oscillating). Pad in [0,1] (so black
+        borders stay 0), normalize last (so borders become -1) — matching the dataset's order.
         """
         t = torch.as_tensor(np.ascontiguousarray(frame))
         if t.ndim == 3 and t.shape[2] in (1, 3):         # HWC -> CHW
@@ -145,6 +149,7 @@ class LekiwiPlanner:
             pad_h, pad_w = target_h - new_h, target_w - new_w
             pad_top, pad_left = pad_h // 2, pad_w // 2
             t = F.pad(t, (pad_left, pad_w - pad_left, pad_top, pad_h - pad_top), value=0.0)
+        t = t * 2.0 - 1.0                                 # [0,1] -> [-1,1]  (match training normalize_pixel)
         return t.unsqueeze(1).to(self.device)            # [1,1,C,H,W]
 
     def _encode_last(self, obs):
