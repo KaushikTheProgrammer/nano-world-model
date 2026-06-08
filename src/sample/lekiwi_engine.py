@@ -65,10 +65,11 @@ class LekiwiPlanner:
     """Live wrapper of the 6a planner. plan(frame, goal) -> PlanResult (matches scripts/lekiwi_mpc.py)."""
 
     def __init__(self, ckpt, device="cuda", ddim=3, num_samples=32, opt_steps=3, topk=10,
-                 horizon=3, n_elite_viz=3, action_mean=None, action_std=None):
+                 horizon=3, n_elite_viz=3, action_mean=None, action_std=None, var_scale=1.0):
         self.device = torch.device(device)
         self.ddim, self.horizon, self.n_elite_viz = int(ddim), int(horizon), int(n_elite_viz)
         self.num_samples, self.opt_steps, self.topk = int(num_samples), int(opt_steps), int(topk)
+        self.var_scale = float(var_scale)        # CEM initial sampling std (× dataset action-std); >1 = wider exploration
         torch.set_grad_enabled(False)
 
         # ---- model (exactly as 6a) ----
@@ -115,14 +116,14 @@ class LekiwiPlanner:
         self._goal_cache = None                          # (id(goal), obs_g, zg)
         print(f"[engine] ready: ckpt loaded, f={self.f}, image_size={self.image_size}, "
               f"latent=[{self.C_lat},{self.h_lat},{self.w_lat}], DDIM={self.ddim}, "
-              f"CEM {self.num_samples}×{self.opt_steps}×top{self.topk}, H={self.horizon}")
+              f"CEM {self.num_samples}×{self.opt_steps}×top{self.topk}, H={self.horizon}, var_scale={self.var_scale}")
 
     # ---- helpers ----
     def _make_planner(self):
         return CEMPlanner(
             world_model=self.wm, objective_fn=self.objective_fn, action_dim=2, horizon=self.horizon,
             num_samples=self.num_samples, topk=self.topk, opt_steps=self.opt_steps,
-            var_scale=1.0, eval_every=self.opt_steps, sigma_min=1e-3,
+            var_scale=self.var_scale, eval_every=self.opt_steps, sigma_min=1e-3,
             action_low=None, action_high=None, name="CEM", device=str(self.device))
 
     def _set_ddim(self, n):
