@@ -51,6 +51,8 @@ class PlanResult:
     cem_loss: Optional[float] = None
     imagined_rgb: Optional[np.ndarray] = None
     elite_rgb: List[np.ndarray] = field(default_factory=list)
+    model_live_rgb: Optional[np.ndarray] = None   # the letterboxed 256² frame the VAE actually encodes
+    model_goal_rgb: Optional[np.ndarray] = None   # the letterboxed 256² goal the VAE actually encodes
 
 
 def _flat_l2(a, b):
@@ -160,6 +162,12 @@ class LekiwiPlanner:
         img = decode_latents(self.vae, lat, self.vae_precision).clamp(0, 1)   # [1,1,C,H,W] in [0,1]
         return (img[0, 0].permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
 
+    def _denorm_view(self, t):
+        """[1,1,C,256,256] in [-1,1] -> HWC uint8 RGB: EXACTLY what the VAE encodes (letterbox + black
+        bars, range-mapped back to display). For telemetry, so the viewer shows the model's true input."""
+        img = ((t[0, 0] + 1.0) / 2.0).clamp(0, 1)
+        return (img.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
+
     def _goal(self, goal):
         if self._goal_cache and self._goal_cache[0] == id(goal):
             return self._goal_cache[1], self._goal_cache[2]
@@ -200,4 +208,6 @@ class LekiwiPlanner:
 
         return PlanResult(vx=vx, theta_deg=theta_deg, dist_to_goal=dist_to_goal,
                           cem_loss=float(info.get("final_loss", 0.0)),
-                          imagined_rgb=imagined_rgb, elite_rgb=elite_rgb)
+                          imagined_rgb=imagined_rgb, elite_rgb=elite_rgb,
+                          model_live_rgb=self._denorm_view(obs_0["visual"]),
+                          model_goal_rgb=self._denorm_view(obs_g["visual"]))
