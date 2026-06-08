@@ -306,6 +306,11 @@ def main():
             mu, info = planner.plan(obs_0, obs_g)        # mu: [1, horizon, 2] normalized
             mu = mu.detach()
             cem_reached = flat_l2(rollout_last_latent(video, mu, ddim), zg)
+            print(f"      do_nothing={do_nothing:6.2f}  gt_ceiling={gt_ceiling:6.2f}  "
+                  f"cem_reached={cem_reached:6.2f}  "
+                  f"{'BEATS' if cem_reached < do_nothing else 'flat '}  "
+                  f"(wm_drop={do_nothing - gt_ceiling:+5.2f}, cem_drop={do_nothing - cem_reached:+5.2f})",
+                  flush=True)
 
             # action recovery (denormalize CEM plan -> raw (Dx,Dtheta))
             cem_raw = (mu.to(device) * a_std_d + a_mean_d)[0]                    # [horizon, 2]

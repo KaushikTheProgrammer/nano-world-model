@@ -49,7 +49,9 @@ class PlanResult:
     theta_deg: float                         # deg/s, first chunk (+ = CCW, per 6b.0)
     dist_to_goal: float                      # current latent-L2(z_now, z_goal) — termination signal
     cem_loss: Optional[float] = None
-    imagined_rgb: Optional[np.ndarray] = None
+    imagined_rgb: Optional[np.ndarray] = None       # +H endpoint of the rollout (what CEM's objective scores)
+    imagined_next_rgb: Optional[np.ndarray] = None  # +1 chunk = the frame the robot ACTUALLY executes toward
+    imagined_seq_rgb: List[np.ndarray] = field(default_factory=list)  # full [+1..+H] filmstrip (see the drift)
     elite_rgb: List[np.ndarray] = field(default_factory=list)
     model_live_rgb: Optional[np.ndarray] = None   # the letterboxed 256² frame the VAE actually encodes
     model_goal_rgb: Optional[np.ndarray] = None   # the letterboxed 256² goal the VAE actually encodes
@@ -193,11 +195,18 @@ class LekiwiPlanner:
         vx = dx / CHUNK_DT
         theta_deg = (dth / CHUNK_DT) * RAD2DEG
 
-        # decoded imagined rollout (WM's predicted goal frame under the plan) + top-K elite fan, for rerun
-        imagined_rgb, elite_rgb = None, []
+        # decoded imagined rollout for rerun. The rollout is [1, 1+H, ...]: [:,0]=context (now),
+        # [:,1:]=generated frames +1..+H. The robot EXECUTES only chunk +1, so that is the honest
+        # "will execute" frame (compare to the next live frame); +H is the endpoint CEM's objective scores
+        # (further forward + most autoregressively degraded). Expose both + the full filmstrip.
+        imagined_rgb, imagined_next_rgb, imagined_seq_rgb, elite_rgb = None, None, [], []
         try:
             z_cem, _ = self.wm.rollout(obs_0, mu.to(self.device), num_sampling_steps=self.ddim)
-            imagined_rgb = self._decode_last(z_cem["visual"][:, -1:])
+            vis = z_cem["visual"]                                    # [1, 1+H, C_lat, h, w]
+            n_gen = vis.shape[1] - 1                                 # = H generated frames
+            imagined_seq_rgb = [self._decode_last(vis[:, i:i + 1]) for i in range(1, 1 + n_gen)]
+            imagined_next_rgb = imagined_seq_rgb[0] if imagined_seq_rgb else None   # +1 chunk (executed)
+            imagined_rgb = imagined_seq_rgb[-1] if imagined_seq_rgb else None        # +H endpoint (CEM target)
             elites = info.get("elite_actions")
             if elites is not None and self.n_elite_viz > 0:
                 for k in range(min(self.n_elite_viz, elites.shape[0])):
@@ -208,6 +217,7 @@ class LekiwiPlanner:
 
         return PlanResult(vx=vx, theta_deg=theta_deg, dist_to_goal=dist_to_goal,
                           cem_loss=float(info.get("final_loss", 0.0)),
-                          imagined_rgb=imagined_rgb, elite_rgb=elite_rgb,
+                          imagined_rgb=imagined_rgb, imagined_next_rgb=imagined_next_rgb,
+                          imagined_seq_rgb=imagined_seq_rgb, elite_rgb=elite_rgb,
                           model_live_rgb=self._denorm_view(obs_0["visual"]),
                           model_goal_rgb=self._denorm_view(obs_g["visual"]))
