@@ -122,6 +122,8 @@ class Driver:
         # --- start frame ---
         self.start_model = self._seed_model(args.start_val, args.start_image)   # [1,1,C,H,W]
         self.start_rgb = to_uint8(self.start_model[0, 0], model_range=self.normalize_pixel)
+        self.start_val = args.start_val if args.start_image is None else None    # current val idx (None if image)
+        self.n_val = len(self._build_val())                                      # total val slices, for the switcher
 
         # --- goal (optional) ---
         self.goal_model = None
@@ -254,6 +256,18 @@ class Driver:
         self.strip = [self.start_rgb]
         return self._full_state()
 
+    def set_start(self, val_idx):
+        """Swap the start frame to a different val slice (clears the current drive)."""
+        val = self._build_val()
+        if not (0 <= val_idx < len(val)):
+            return {"error": f"start val {val_idx} out of range (0..{len(val) - 1})"}
+        self.start_model = val[val_idx]["video"][:1].unsqueeze(0).to(self.device)   # dataset-native [-1,1]
+        self.start_rgb = to_uint8(self.start_model[0, 0], model_range=self.normalize_pixel)
+        self.start_val = int(val_idx)
+        self.acts, self.raw = [], []
+        self.strip = [self.start_rgb]
+        return self._full_state()
+
     def rescale(self, direction):
         self.scale = max(0.1, min(8.0, self.scale * (1.25 if direction == "up" else 0.8)))
         return {"scale": round(self.scale, 3),
@@ -311,6 +325,7 @@ class Driver:
             "step_dx_cm": round(self.step_dx * 100, 2),
             "step_dth_deg": round(math.degrees(self.step_dth), 2),
             "net": self._net(), "dist": self._dist(z_last), "has_goal": self.zg is not None,
+            "start_val": self.start_val, "n_val": self.n_val,
             "frame": png_b64(cur_rgb), "strip": [png_b64(f) for f in self.strip],
             "goal": png_b64(self.goal_rgb) if self.goal_rgb is not None else None,
         }
@@ -334,6 +349,9 @@ PAGE = """<!doctype html><html><head><meta charset="utf-8"><title>WM Driver</tit
  .k{display:inline-block;background:#222;border:1px solid #444;border-radius:4px;padding:1px 6px;margin:1px}
  #busy{color:#fc6} .dist{font-size:20px;color:#6f6} .err{color:#f66}
  small{color:#888}
+ button{background:#222;color:#ddd;border:1px solid #555;border-radius:4px;padding:3px 8px;margin:2px;cursor:pointer;font-family:inherit}
+ button:hover{background:#333}
+ input[type=number]{background:#222;color:#ddd;border:1px solid #555;border-radius:4px;padding:2px 4px}
 </style></head><body>
 <h2>NanoWM interactive driver <small id="busy"></small></h2>
 <div class="row">
@@ -354,6 +372,16 @@ PAGE = """<!doctype html><html><head><meta charset="utf-8"><title>WM Driver</tit
       <span class="k">[</span>/<span class="k">]</span>step size
       <span class="k">c</span>CEM <span class="k">g</span>set goal=here
       <span class="k">u</span>undo <span class="k">r</span>reset
+    </div>
+  </div>
+  <div class="panel">
+    <div class="hud"><b>start frame</b> &nbsp;<span id="startinfo">val ?</span><br>
+      <button onclick="startBy(-1)">◀ prev</button>
+      <button onclick="startBy(1)">next ▶</button>
+      <button onclick="startRand()">random</button><br>
+      jump <input id="startjump" type="number" min="0" style="width:72px">
+      <button onclick="startJump()">load</button>
+      <div style="margin-top:6px"><small>switches the seed; clears your drive. keys <span class="k">,</span>/<span class="k">.</span> prev/next</small></div>
     </div>
   </div>
 </div>
@@ -384,7 +412,14 @@ function renderState(s){
   if(s.net)h+='<b>net</b> Δx='+s.net.dx_cm.toFixed(1)+'cm Δθ='+s.net.dth_deg.toFixed(1)+'°';
   $('hud').innerHTML=h;
   if('dist' in s)$('dist').textContent = s.dist==null?'(no goal)':('latentL2 '+s.dist.toFixed(1));
+  if('start_val' in s){window.START_VAL=s.start_val; window.N_VAL=s.n_val;
+    $('startinfo').textContent = (s.start_val==null?'image seed':('val '+s.start_val))+' / '+s.n_val+' slices';
+    if($('startjump'))$('startjump').max=(s.n_val-1);}
 }
+function startBy(d){let n=window.N_VAL||1, cur=window.START_VAL; if(cur==null)cur=0;
+  call('/start?val='+((((cur+d)%n)+n)%n));}
+function startRand(){let n=window.N_VAL||1; call('/start?val='+Math.floor(Math.random()*n));}
+function startJump(){let v=parseInt($('startjump').value); if(!isNaN(v))call('/start?val='+v);}
 function renderCem(c){
   if(c.error){$('cemhud').innerHTML='<span class="err">'+c.error+'</span>';$('cempanel').style.display='';return;}
   $('cempanel').style.display='';
@@ -401,6 +436,7 @@ async function call(path){
 }
 const MOVE=new Set(['w','a','s','d','q','e']);
 document.addEventListener('keydown',ev=>{
+  if(ev.target && ev.target.tagName==='INPUT')return;   // don't hijack typing in the jump box
   const k=ev.key.toLowerCase();
   if(MOVE.has(k))call('/step?key='+k);
   else if(k==='c')call('/cem');
@@ -409,6 +445,8 @@ document.addEventListener('keydown',ev=>{
   else if(k==='r')call('/reset');
   else if(k===']')call('/scale?dir=up');
   else if(k==='[')call('/scale?dir=down');
+  else if(k===',')startBy(-1);
+  else if(k==='.')startBy(1);
   else return;
   ev.preventDefault();
 });
@@ -449,6 +487,8 @@ class Handler(BaseHTTPRequestHandler):
                     out = DRIVER.undo()
                 elif u.path == "/reset":
                     out = DRIVER.reset()
+                elif u.path == "/start":
+                    out = DRIVER.set_start(int(q.get("val", ["0"])[0]))
                 elif u.path == "/scale":
                     out = DRIVER.rescale(q.get("dir", ["up"])[0])
                 elif u.path == "/setgoal":
