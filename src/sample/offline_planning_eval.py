@@ -173,6 +173,8 @@ def main():
     ap.add_argument("--action_clip", type=float, default=None,
                     help="optional symmetric clip on normalized CEM actions (default: unclipped)")
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--visual_metric", choices=["auto", "mse", "cosine"], default="auto",
+                    help="CEM objective: auto = mse for sd_vae ckpts, token-cosine for semantic ckpts")
     # montage
     ap.add_argument("--montage_n", type=int, default=8, help="how many scenes to render decoded montages for")
     ap.add_argument("--montage_ddim", type=int, default=50, help="DDIM steps for the clean montage rollout")
@@ -209,7 +211,7 @@ def main():
     wm_cfg = OmegaConf.create(OmegaConf.to_container(train_cfg, resolve=True))
     OmegaConf.set_struct(wm_cfg, False)  # allow us to flip model.num_sampling_steps per DDIM
     world_model = DiffusionWorldModel(model, latent_codec, diffusion, wm_cfg)
-    vae = latent_codec.vae
+    vae = getattr(latent_codec, "vae", None)   # None for semantic codecs (montages need --montage_n 0)
     vae_precision = getattr(latent_codec, "precision", "fp32")
 
     H_train = train_cfg.model.num_frames - train_cfg.model.n_context_frames
@@ -245,7 +247,14 @@ def main():
             print(f"  [shortfall] bucket '{b}': got {s['got']}/{s['wanted']} (only {s['available']} available in val)")
 
     # ---- objective + CEM (reused unchanged) ----
-    objective_fn = create_objective_fn(alpha=1.0, base=2.0, mode="last", visual_metric="mse")
+    codec_kind = getattr(latent_codec, "kind", "sd_vae")
+    vm = args.visual_metric
+    if vm == "auto":
+        vm = "mse" if codec_kind == "sd_vae" else "cosine"
+    token_dim = int(latent_codec.latent_shape.channels) if vm == "cosine" else None
+    print(f"[eval] objective visual_metric={vm}" + (f" token_dim={token_dim}" if token_dim else ""))
+    objective_fn = create_objective_fn(alpha=1.0, base=2.0, mode="last", visual_metric=vm,
+                                       token_dim=token_dim, channels_first=True)
 
     def make_planner():
         return CEMPlanner(
