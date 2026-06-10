@@ -107,6 +107,7 @@ class Driver:
             num_samples=args.num_samples, opt_steps=args.opt_steps, topk=args.topk,
             horizon=args.horizon, n_elite_viz=args.n_elite_viz,
             action_mean=args.action_mean, action_std=args.action_std,
+            token_decoder=args.token_decoder,
         )
         self.lp._set_ddim(self.lp.ddim)   # default the config to the cheap DDIM for any path that reads it
         self.device = self.lp.device
@@ -529,6 +530,8 @@ def main():
     ap.add_argument("--n-elite-viz", type=int, default=3)
     ap.add_argument("--action-mean", type=float, nargs=2, default=INTEGRATE_SE2_ACTION_MEAN)
     ap.add_argument("--action-std", type=float, nargs=2, default=INTEGRATE_SE2_ACTION_STD)
+    ap.add_argument("--token-decoder", default=None,
+                    help="train_token_decoder.py ckpt — required for pixel viz with semantic (encoder-only) WM ckpts")
     args = ap.parse_args()
 
     if args.start_val is None and args.start_image is None:
