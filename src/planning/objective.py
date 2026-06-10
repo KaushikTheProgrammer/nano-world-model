@@ -12,6 +12,8 @@ def create_objective_fn(
     visual_metric: str = "mse",
     token_dim: int | None = None,
     eps: float = 1e-6,
+    channels_first: bool = False,
+    first_frame_index: int = 1,
 ):
     """
     Create objective function for planning.
@@ -23,6 +25,17 @@ def create_objective_fn(
         visual_metric: "mse" for raw latent MSE, or "cosine" for token-wise
             cosine distance. The latter is useful for semantic patch features.
         token_dim: Token channel dimension for flattened semantic latents.
+        channels_first: layout of the flattened visual dim. False (default) =
+            token-major [..., n_tokens*token_dim] (tokens contiguous). True =
+            channel-major [..., token_dim*n_tokens] — the layout produced by
+            flattening a [C,h,w] latent (DiffusionWorldModel.rollout) — tokens
+            are recovered as reshape(C, hw).T. Using the wrong layout silently
+            mixes channels across tokens.
+        first_frame_index: for mode="first": index of the first GENERATED frame
+            in the rollout (context frames precede it; n_context=1 -> 1).
+        mode: "last" (loss on final frame), "first" (loss on the first generated
+            frame — the least autoregressively-degraded one, the chunk actually
+            executed under execute-one-replan), or "all" (exponentially weighted).
 
     Returns:
         Objective function that takes (z_obs_pred, z_obs_tgt) and returns loss [B]
@@ -34,20 +47,23 @@ def create_objective_fn(
             return metric(pred_visual, tgt_visual).mean(dim=tuple(range(1, pred_visual.ndim)))
 
         if visual_metric == "cosine":
-            if token_dim is None or token_dim <= 0:
-                raise ValueError("objective.token_dim must be set for visual_metric='cosine'")
-            if pred_visual.shape[-1] % token_dim != 0:
-                raise ValueError(
-                    f"visual dim {pred_visual.shape[-1]} is not divisible by token_dim={token_dim}"
-                )
-            pred_tokens = pred_visual.reshape(*pred_visual.shape[:-1], -1, token_dim)
-            tgt_tokens = tgt_visual.reshape(*tgt_visual.shape[:-1], -1, token_dim)
+            pred_tokens = _to_tokens(pred_visual)
+            tgt_tokens = _to_tokens(tgt_visual)
             pred_tokens = torch.nn.functional.normalize(pred_tokens, dim=-1, eps=eps)
             tgt_tokens = torch.nn.functional.normalize(tgt_tokens, dim=-1, eps=eps)
             loss = 1.0 - (pred_tokens * tgt_tokens).sum(dim=-1)
             return loss.mean(dim=tuple(range(1, loss.ndim)))
 
         raise NotImplementedError(f"Unknown visual_metric: {visual_metric}")
+
+    def _to_tokens(x):
+        if token_dim is None or token_dim <= 0:
+            raise ValueError("objective.token_dim must be set for visual_metric='cosine'")
+        if x.shape[-1] % token_dim != 0:
+            raise ValueError(f"visual dim {x.shape[-1]} is not divisible by token_dim={token_dim}")
+        if channels_first:                      # [..., C*hw] from [C,h,w] flatten -> [..., hw, C]
+            return x.reshape(*x.shape[:-1], token_dim, -1).transpose(-1, -2)
+        return x.reshape(*x.shape[:-1], -1, token_dim)
 
     def objective_fn_last(z_obs_pred, z_obs_tgt):
         """
@@ -110,16 +126,8 @@ def create_objective_fn(
                 z_obs_tgt["visual"],
             ).mean(dim=tuple(range(2, z_obs_pred["visual"].ndim)))
         elif visual_metric == "cosine":
-            if token_dim is None or token_dim <= 0:
-                raise ValueError("objective.token_dim must be set for visual_metric='cosine'")
-            pred_visual = z_obs_pred["visual"]
-            tgt_visual = z_obs_tgt["visual"]
-            if pred_visual.shape[-1] % token_dim != 0:
-                raise ValueError(
-                    f"visual dim {pred_visual.shape[-1]} is not divisible by token_dim={token_dim}"
-                )
-            pred_tokens = pred_visual.reshape(*pred_visual.shape[:-1], -1, token_dim)
-            tgt_tokens = tgt_visual.reshape(*tgt_visual.shape[:-1], -1, token_dim)
+            pred_tokens = _to_tokens(z_obs_pred["visual"])
+            tgt_tokens = _to_tokens(z_obs_tgt["visual"])
             pred_tokens = torch.nn.functional.normalize(pred_tokens, dim=-1, eps=eps)
             tgt_tokens = torch.nn.functional.normalize(tgt_tokens, dim=-1, eps=eps)
             loss_visual = 1.0 - (pred_tokens * tgt_tokens).sum(dim=-1)
@@ -141,8 +149,26 @@ def create_objective_fn(
 
         return loss
 
+    def objective_fn_first(z_obs_pred, z_obs_tgt):
+        """Loss on the FIRST generated frame (+1 chunk): least WM-degraded, and the one
+        actually executed under execute-one-replan. Goal target = its last frame."""
+        i = first_frame_index
+        loss_visual = visual_loss(
+            z_obs_pred["visual"][:, i:i + 1],
+            z_obs_tgt["visual"][:, -1:],
+        )
+        if z_obs_pred.get("proprio") is not None and z_obs_tgt.get("proprio") is not None:
+            loss_proprio = metric(
+                z_obs_pred["proprio"][:, i:i + 1],
+                z_obs_tgt["proprio"][:, -1:]
+            ).mean(dim=tuple(range(1, z_obs_pred["proprio"].ndim)))
+            loss_visual = loss_visual + alpha * loss_proprio
+        return loss_visual
+
     if mode == "last":
         return objective_fn_last
+    elif mode == "first":
+        return objective_fn_first
     elif mode == "all":
         return objective_fn_all
     else:

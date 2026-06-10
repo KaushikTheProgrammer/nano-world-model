@@ -65,7 +65,13 @@ class LekiwiPlanner:
     """Live wrapper of the 6a planner. plan(frame, goal) -> PlanResult (matches scripts/lekiwi_mpc.py)."""
 
     def __init__(self, ckpt, device="cuda", ddim=3, num_samples=32, opt_steps=3, topk=10,
-                 horizon=3, n_elite_viz=3, action_mean=None, action_std=None, var_scale=1.0):
+                 horizon=3, n_elite_viz=3, action_mean=None, action_std=None, var_scale=1.0,
+                 cost_metric="auto", cost_mode="last", token_decoder=None):
+        # cost_metric: "auto" (mse for sd_vae, token-cosine for semantic codecs) | "mse" | "cosine"
+        # cost_mode:   "last" (+H endpoint, the 6b behavior) | "first" (+1 chunk — least WM-degraded,
+        #              the chunk actually executed) | "all" (exp-weighted)
+        # token_decoder: path to a train_token_decoder.py checkpoint for viz when the codec
+        #              has no pixel decoder (semantic codecs). Optional — viz degrades gracefully.
         self.device = torch.device(device)
         self.ddim, self.horizon, self.n_elite_viz = int(ddim), int(horizon), int(n_elite_viz)
         self.num_samples, self.opt_steps, self.topk = int(num_samples), int(opt_steps), int(topk)
@@ -79,8 +85,20 @@ class LekiwiPlanner:
         self.wm = DiffusionWorldModel(model, latent_codec, diffusion, wm_cfg)
         self.wm_cfg = wm_cfg
         self.latent_codec = latent_codec
-        self.vae = latent_codec.vae
+        self.vae = getattr(latent_codec, "vae", None)            # None for semantic (encoder-only) codecs
         self.vae_precision = getattr(latent_codec, "precision", "fp32")
+        self.codec_kind = getattr(latent_codec, "kind", "sd_vae")
+        self.token_decoder = None
+        if self.vae is None and token_decoder:
+            import sys as _sys, os as _os
+            _scripts = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)),
+                                     "..", "..", "..", "..", "scripts")
+            _sys.path.append(_os.path.abspath(_scripts))
+            from train_token_decoder import build_decoder        # noqa: E402
+            _ck = torch.load(token_decoder, map_location=self.device, weights_only=False)
+            self.token_decoder = build_decoder(in_ch=_ck["in_ch"]).to(self.device).eval()
+            self.token_decoder.load_state_dict(_ck["state_dict"])
+            print(f"[engine] token viz decoder loaded ({token_decoder}, step {_ck.get('step')})")
         self.f = train_cfg.dataset.frame_interval
         img = train_cfg.model.image_size
         self.image_size = (img, img) if isinstance(img, int) else tuple(img)
@@ -112,11 +130,19 @@ class LekiwiPlanner:
         ref = self.latent_codec.encode(torch.zeros(1, 3, *self.image_size, device=self.device))
         self.C_lat, self.h_lat, self.w_lat = ref.shape[1:]
 
-        self.objective_fn = create_objective_fn(alpha=1.0, base=2.0, mode="last", visual_metric="mse")
+        if cost_metric == "auto":
+            cost_metric = "mse" if self.codec_kind == "sd_vae" else "cosine"
+        self.cost_metric, self.cost_mode = cost_metric, cost_mode
+        # rollout latents are flattened [C,h,w] -> channel-major; token_dim = C (token dim of the codec)
+        self.objective_fn = create_objective_fn(
+            alpha=1.0, base=2.0, mode=cost_mode, visual_metric=cost_metric,
+            token_dim=self.C_lat if cost_metric == "cosine" else None,
+            channels_first=True, first_frame_index=int(train_cfg.model.n_context_frames))
         self._goal_cache = None                          # (id(goal), obs_g, zg)
         print(f"[engine] ready: ckpt loaded, f={self.f}, image_size={self.image_size}, "
-              f"latent=[{self.C_lat},{self.h_lat},{self.w_lat}], DDIM={self.ddim}, "
-              f"CEM {self.num_samples}×{self.opt_steps}×top{self.topk}, H={self.horizon}, var_scale={self.var_scale}")
+              f"latent=[{self.C_lat},{self.h_lat},{self.w_lat}] ({self.codec_kind}), DDIM={self.ddim}, "
+              f"CEM {self.num_samples}×{self.opt_steps}×top{self.topk}, H={self.horizon}, "
+              f"var_scale={self.var_scale}, cost={self.cost_metric}/{self.cost_mode}")
 
     # ---- helpers ----
     def _make_planner(self):
@@ -160,10 +186,25 @@ class LekiwiPlanner:
     def _encode_last(self, obs):
         return self.wm.encode_obs(obs)["visual"][:, -1:]
 
+    def _dist(self, a, b):
+        """Current-state distance in the SAME metric the CEM cost uses. mse-kind codecs keep the
+        6b flat-L2 (reach-thresh scales preserved); semantic codecs use mean per-token cosine
+        distance (the Gate-A-validated dinov2_cos; scale ~0-2, recalibrate --reach-thresh)."""
+        if self.cost_metric != "cosine":
+            return _flat_l2(a, b)
+        ta = a.reshape(self.C_lat, -1).T                 # [hw, C] tokens
+        tb = b.reshape(self.C_lat, -1).T
+        return float(1.0 - F.cosine_similarity(ta, tb, dim=-1).mean())
+
     def _decode_last(self, latents_flat):
         lat = latents_flat.reshape(1, 1, self.C_lat, self.h_lat, self.w_lat)
-        img = decode_latents(self.vae, lat, self.vae_precision).clamp(0, 1)   # [1,1,C,H,W] in [0,1]
-        return (img[0, 0].permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
+        if self.vae is not None:
+            img = decode_latents(self.vae, lat, self.vae_precision).clamp(0, 1)   # [1,1,C,H,W] in [0,1]
+            return (img[0, 0].permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
+        if self.token_decoder is not None:
+            img = ((self.token_decoder(lat[0]) + 1.0) / 2.0).clamp(0, 1)          # [1,3,256,256]
+            return (img[0].permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
+        raise RuntimeError(f"codec {self.codec_kind} has no decoder and no token_decoder was given")
 
     def _denorm_view(self, t):
         """[1,1,C,256,256] in [-1,1] -> HWC uint8 RGB: EXACTLY what the VAE encodes (letterbox + black
@@ -185,7 +226,7 @@ class LekiwiPlanner:
         obs_0 = {"visual": self._preprocess(frame)}
         z0 = self._encode_last(obs_0)
         obs_g, zg = self._goal(goal)
-        dist_to_goal = _flat_l2(z0, zg)                  # current latent-L2 to goal (termination + logging)
+        dist_to_goal = self._dist(z0, zg)                # termination + logging (same metric as the cost)
 
         self._set_ddim(self.ddim)
         planner = self._make_planner()
