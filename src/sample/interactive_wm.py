@@ -214,7 +214,8 @@ class Driver:
         return z_last, self._decode_last(z_last)
 
     def _dist(self, z_last):
-        return None if self.zg is None else _flat_l2(z_last, self.zg)
+        # engine metric = what the CEM cost/termination actually use (cosine for semantic codecs)
+        return None if self.zg is None else self.lp._dist(z_last, self.zg)
 
     def _net(self):
         dx = sum(r[0] for r in self.raw) * 100.0          # cm
@@ -303,7 +304,7 @@ class Driver:
 
         z_cem, _ = self.lp.wm.rollout(obs_cur, mu, num_sampling_steps=self.lp.ddim)   # [1,1+H,D]
         traj = self._decode_traj(z_cem["visual"])                        # [start, t+1..t+H]
-        reached = _flat_l2(z_cem["visual"][:, -1:], self.zg)
+        reached = self.lp._dist(z_cem["visual"][:, -1:], self.zg)
 
         elites = []
         ea = info.get("elite_actions")
@@ -397,6 +398,7 @@ PAGE = """<!doctype html><html><head><meta charset="utf-8"><title>WM Driver</tit
   <div class="strip" id="cemelites"></div>
 </div>
 <script>
+const DIST_NAME = '__DIST_NAME__', DIST_DP = __DIST_DP__;
 let busy=false;
 const $=id=>document.getElementById(id);
 function setBusy(b){busy=b;$('busy').textContent=b?'… working':'';}
@@ -412,7 +414,7 @@ function renderState(s){
        +'cm Δθ='+s.last_action.dth_deg.toFixed(1)+'°<br>';
   if(s.net)h+='<b>net</b> Δx='+s.net.dx_cm.toFixed(1)+'cm Δθ='+s.net.dth_deg.toFixed(1)+'°';
   $('hud').innerHTML=h;
-  if('dist' in s)$('dist').textContent = s.dist==null?'(no goal)':('latentL2 '+s.dist.toFixed(1));
+  if('dist' in s)$('dist').textContent = s.dist==null?'(no goal)':(DIST_NAME+' '+s.dist.toFixed(DIST_DP));
   if('start_val' in s){window.START_VAL=s.start_val; window.N_VAL=s.n_val;
     $('startinfo').textContent = (s.start_val==null?'image seed':('val '+s.start_val))+' / '+s.n_val+' slices';
     if($('startjump'))$('startjump').max=(s.n_val-1);}
@@ -471,7 +473,9 @@ class Handler(BaseHTTPRequestHandler):
         u = urlparse(self.path)
         q = parse_qs(u.query)
         if u.path == "/" or u.path == "/index.html":
-            body = PAGE.encode("utf-8")
+            cos = getattr(DRIVER.lp, "cost_metric", "mse") == "cosine"
+            body = (PAGE.replace("__DIST_NAME__", "tokenCos" if cos else "latentL2")
+                        .replace("__DIST_DP__", "3" if cos else "1")).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
