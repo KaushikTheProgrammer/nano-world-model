@@ -202,7 +202,8 @@ class LekiwiPlanner:
             img = decode_latents(self.vae, lat, self.vae_precision).clamp(0, 1)   # [1,1,C,H,W] in [0,1]
             return (img[0, 0].permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
         if self.token_decoder is not None:
-            img = ((self.token_decoder(lat[0]) + 1.0) / 2.0).clamp(0, 1)          # [1,3,256,256]
+            with torch.no_grad():                              # callers aren't all under no_grad (interactive driver)
+                img = ((self.token_decoder(lat[0]) + 1.0) / 2.0).clamp(0, 1)      # [1,3,256,256]
             return (img[0].permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
         raise RuntimeError(f"codec {self.codec_kind} has no decoder and no token_decoder was given")
 
