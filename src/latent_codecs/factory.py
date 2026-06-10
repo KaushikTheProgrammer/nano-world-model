@@ -86,6 +86,7 @@ def resolve_latent_codec_config(cfg) -> LatentCodecConfig:
         patch_size=patch_size,
         repo_path=_select(cfg, "latent_codec.repo_path", None),
         checkpoint_key=_select(cfg, "latent_codec.checkpoint_key", None),
+        latent_scale=float(_select(cfg, "latent_codec.latent_scale", 1.0)),
     )
 
 
@@ -124,6 +125,7 @@ def build_latent_codec(cfg):
             input_size=codec_cfg.input_size,
             patch_size=codec_cfg.patch_size,
             precision=codec_cfg.precision,
+            latent_scale=codec_cfg.latent_scale,
         )
     if codec_cfg.kind == "vjepa2_1":
         return VJEPA21LatentCodec(
@@ -134,5 +136,6 @@ def build_latent_codec(cfg):
             precision=codec_cfg.precision,
             repo_path=codec_cfg.repo_path,
             checkpoint_key=codec_cfg.checkpoint_key or "ema_encoder",
+            latent_scale=codec_cfg.latent_scale,
         )
     raise NotImplementedError(f"Unsupported latent codec: {codec_cfg.kind}")

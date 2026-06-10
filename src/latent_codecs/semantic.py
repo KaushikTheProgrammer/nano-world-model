@@ -21,12 +21,17 @@ class DensePatchLatentCodec:
         input_size: int,
         patch_size: int,
         precision: str = "fp32",
+        latent_scale: float = 1.0,
     ):
         self.model = model
         self.latent_shape = latent_shape
         self.input_size = int(input_size)
         self.patch_size = int(patch_size)
         self.precision = precision
+        # Divisor applied to encoder tokens so the diffusion/FM targets are ~unit-scale
+        # (the SD-VAE analog is scaling_factor). DINOv2-small post-LN tokens measure
+        # elementwise std ~2.4 on the lekiwi dataset -> latent_scale: 2.4 in config.
+        self.latent_scale = float(latent_scale)
         self._device = torch.device("cpu")
         self._mean = None
         self._std = None
@@ -61,7 +66,8 @@ class DensePatchLatentCodec:
             raise RuntimeError(
                 f"{self.kind} produced token dim {dim}, expected {self.latent_shape.channels}"
             )
-        return tokens.reshape(b, self.latent_shape.height, self.latent_shape.width, dim).permute(0, 3, 1, 2).contiguous()
+        lat = tokens.reshape(b, self.latent_shape.height, self.latent_shape.width, dim).permute(0, 3, 1, 2).contiguous()
+        return lat / self.latent_scale
 
     def _autocast(self, device):
         device_type = device.type if device.type in ("cuda", "cpu") else "cuda"
@@ -97,7 +103,8 @@ class DensePatchLatentCodec:
 class WebDINOLatentCodec(DensePatchLatentCodec):
     kind = "webdino"
 
-    def __init__(self, model_path: str, latent_shape: LatentShape, input_size: int, patch_size: int, precision: str):
+    def __init__(self, model_path: str, latent_shape: LatentShape, input_size: int, patch_size: int, precision: str,
+                 latent_scale: float = 1.0):
         from transformers import Dinov2Model
 
         model = Dinov2Model.from_pretrained(model_path).eval()
@@ -107,6 +114,7 @@ class WebDINOLatentCodec(DensePatchLatentCodec):
             input_size=input_size,
             patch_size=patch_size,
             precision=precision,
+            latent_scale=latent_scale,
         )
         hidden_size = int(model.config.hidden_size)
         model_patch_size = int(model.config.patch_size)
@@ -137,6 +145,7 @@ class VJEPA21LatentCodec(DensePatchLatentCodec):
         precision: str,
         repo_path: str | None = None,
         checkpoint_key: str = "ema_encoder",
+        latent_scale: float = 1.0,
     ):
         encoder = self._load_encoder(repo_path=repo_path)
         checkpoint_file = self._resolve_checkpoint_path(checkpoint_path)
@@ -159,6 +168,7 @@ class VJEPA21LatentCodec(DensePatchLatentCodec):
             input_size=input_size,
             patch_size=patch_size,
             precision=precision,
+            latent_scale=latent_scale,
         )
         if int(encoder.embed_dim) != latent_shape.channels:
             raise ValueError(

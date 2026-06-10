@@ -28,6 +28,7 @@ class LatentCodecConfig:
     patch_size: int | None = None
     repo_path: str | None = None
     checkpoint_key: str | None = None
+    latent_scale: float = 1.0
 
 
 @runtime_checkable

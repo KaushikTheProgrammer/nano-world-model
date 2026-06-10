@@ -4,3 +4,4 @@ latent_channels: ${model.latent_channels}
 input_size: 224
 patch_size: 14
 precision: fp32
+latent_scale: 1.0
